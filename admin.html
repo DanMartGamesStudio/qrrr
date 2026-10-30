@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR dinámico</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--text:#1d1d1b;--muted:#6b6b66;--line:#e2e0d8;--accent:#2b59c3}
+@media(prefers-color-scheme:dark){:root{--bg:#171715;--card:#222220;--text:#f0efe9;--muted:#a3a29a;--line:#3a3a36;--accent:#6c93f0}}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px;display:grid;gap:16px}
+h1{font-size:1.4rem;margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:12px}
+input{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;width:100%;box-sizing:border-box}
+button{padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}
+button.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+label{font-size:.85rem;color:var(--muted)}
+.item{border-top:1px solid var(--line);padding-top:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.item .qr{width:110px;height:110px;background:#fff;border-radius:8px;padding:4px;box-sizing:border-box}
+.item .qr svg{width:100%;height:100%}
+.info{flex:1;min-width:200px;word-break:break-all;font-size:.9rem}
+.info b{display:block}
+.muted{color:var(--muted)}
+#msg{color:#c0392b;min-height:1.2em;font-size:.9rem}
+#pa{display:none}
+@media print{main{display:none}#pa{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px}#pa svg{width:9cm;height:9cm}#pa div{font:14px system-ui;word-break:break-all}}
+</style></head><body>
+<main>
+<h1>QR dinámico</h1>
+<div class="card" id="login">
+  <label>Contraseña de administrador</label>
+  <input id="pw" type="password">
+  <button class="p" id="go">Entrar</button>
+  <div id="msg"></div>
+</div>
+<div id="app" style="display:none;gap:16px">
+  <div class="card">
+    <label>Nombre del QR (letras, números y guiones)</label>
+    <input id="id" placeholder="menu-restaurante">
+    <label>Link de destino</label>
+    <input id="url" type="url" placeholder="https://ejemplo.com">
+    <button class="p" id="save">Guardar / cambiar destino</button>
+    <div class="muted" style="font-size:.85rem">Si el nombre ya existe, solo se cambia el destino. El QR impreso sigue siendo el mismo.</div>
+  </div>
+  <div class="card"><b>Tus QR</b><div id="list"></div></div>
+</div>
+</main>
+<div id="pa"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+var $=function(i){return document.getElementById(i)};
+var pw=sessionStorage.getItem("pw")||"";
+function api(path,body){
+  return fetch(path,{method:body?"POST":"GET",headers:{"x-password":pw,"content-type":"application/json"},body:body?JSON.stringify(body):undefined}).then(function(r){
+    if(r.status===401)throw new Error("auth");
+    return r.json().then(function(j){if(!r.ok)throw new Error(j.error||"error");return j});
+  });
+}
+function qrSvg(t){
+  var q=qrcode(0,"M");q.addData(t);q.make();
+  var n=q.getModuleCount(),m=4,s=n+m*2,d="";
+  for(var r=0;r<n;r++)for(var c=0;c<n;c++)if(q.isDark(r,c))d+="M"+(c+m)+" "+(r+m)+"h1v1h-1z";
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+s+' '+s+'" shape-rendering="crispEdges"><rect width="'+s+'" height="'+s+'" fill="#fff"/><path d="'+d+'" fill="#000"/></svg>';
+}
+function dl(name,svg){
+  var cv=document.createElement("canvas");cv.width=cv.height=1000;
+  var im=new Image();
+  im.onload=function(){var x=cv.getContext("2d");x.imageSmoothingEnabled=false;x.drawImage(im,0,0,1000,1000);
+    cv.toBlob(function(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name+".png";a.click()})};
+  im.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+}
+function render(items){
+  var L=$("list");L.innerHTML="";
+  if(!items.length){L.innerHTML='<span class="muted">Aún no hay QR.</span>';return}
+  items.forEach(function(it){
+    var full=location.origin+"/r/"+encodeURIComponent(it.id),svg=qrSvg(full);
+    var d=document.createElement("div");d.className="item";
+    var q=document.createElement("div");q.className="qr";q.innerHTML=svg;
+    var i=document.createElement("div");i.className="info";
+    var b=document.createElement("b");b.textContent=it.id;
+    var a=document.createElement("div");a.className="muted";a.textContent="QR apunta a: "+full;
+    var u=document.createElement("div");u.textContent="Destino actual: "+it.url;
+    i.append(b,a,u);
+    var bt=document.createElement("div");bt.style.display="flex";bt.style.gap="8px";bt.style.flexWrap="wrap";
+    var p=document.createElement("button");p.textContent="Imprimir";
+    p.onclick=function(){$("pa").innerHTML=svg;var t=document.createElement("div");t.textContent=it.id;$("pa").appendChild(t);window.print()};
+    var g=document.createElement("button");g.textContent="PNG";g.onclick=function(){dl(it.id,svg)};
+    var e=document.createElement("button");e.textContent="Editar";e.onclick=function(){$("id").value=it.id;$("url").value=it.url;$("url").focus()};
+    var x=document.createElement("button");x.textContent="Borrar";
+    x.onclick=function(){if(confirm("¿Borrar "+it.id+"? El QR impreso dejará de funcionar."))api("/api/delete",{id:it.id}).then(load)};
+    bt.append(p,g,e,x);d.append(q,i,bt);L.appendChild(d);
+  });
+}
+function load(){
+  return api("/api/list").then(function(j){$("login").style.display="none";$("app").style.display="grid";render(j.items)})
+  .catch(function(){$("login").style.display="grid";$("app").style.display="none"});
+}
+$("go").onclick=function(){pw=$("pw").value;sessionStorage.setItem("pw",pw);$("msg").textContent="";
+  api("/api/list").then(function(j){$("login").style.display="none";$("app").style.display="grid";render(j.items)}).catch(function(){$("msg").textContent="Contraseña incorrecta"})};
+$("save").onclick=function(){
+  api("/api/set",{id:$("id").value.trim(),url:$("url").value.trim()}).then(function(){$("id").value="";$("url").value="";return load()}).catch(function(e){alert(e.message)});
+};
+if(pw)load();
+</script></body></html>
